@@ -1,0 +1,11 @@
+[project]
+name = "zed-pkg-test-chaos-recovery-tests"
+version = "0.1.0"
+description = "Deterministic fault-injection, crash recovery, retry, partition, duplicate-delivery, and convergence tests."
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.deep-tests]
+suite = "chaos"
+deterministic = true
+network_default = "disabled"
