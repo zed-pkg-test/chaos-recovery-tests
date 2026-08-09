@@ -1,7 +1,20 @@
 [package]
-name = "zed-pkg-test/chaos-recovery-tests"
+org = "zed-pkg-test"
+name = "chaos-recovery-tests"
 version = "0.1.0"
 type = "test-suite"
+description = "Deterministic fault-injection, crash recovery, retry, partition, duplicate-delivery, and convergence tests."
+license = "MIT"
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/zed-pkg-test/chaos-recovery-tests"
+
+[install]
+dir = ".vendor/.zed"
+
+[publish]
+exclude = ["artifacts/**", "vendor/**", ".vendor/**", ".env", ".env.*", "__pycache__/**", ".pytest_cache/**"]
 
 [develop]
 commands = [
