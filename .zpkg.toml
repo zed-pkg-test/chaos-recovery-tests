@@ -2,22 +2,22 @@
 org = "zed-pkg-test"
 name = "chaos-recovery-tests"
 version = "0.1.0"
-type = "test-suite"
 description = "Deterministic fault-injection, crash recovery, retry, partition, duplicate-delivery, and convergence tests."
 license = "MIT"
+language = "python"
 
 [package.repository]
 vcs = "git"
 url = "https://github.com/zed-pkg-test/chaos-recovery-tests"
 
+[publish]
+include_readme = true
+tag_format = "v{version}"
+exclude = [".env", ".env.*", ".venv/**", ".vendor/**", "vendor/**", "artifacts/**", "**/__pycache__/**", "**/*.pyc", ".pytest_cache/**"]
+
 [install]
 dir = ".vendor/.zed"
+adapter = "none"
 
-[publish]
-exclude = ["artifacts/**", "vendor/**", ".vendor/**", ".env", ".env.*", "__pycache__/**", ".pytest_cache/**"]
-
-[develop]
-commands = [
-  "PYTHONPATH=src python -m unittest discover -s tests -v",
-  "python scripts/verify_repository.py"
-]
+[scripts]
+test = "PYTHONPATH=src python -m unittest discover -s tests -v && python scripts/verify_repository.py"
