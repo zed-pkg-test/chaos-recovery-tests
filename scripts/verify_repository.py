@@ -15,8 +15,12 @@ required = {
     ".zpkg.toml",
     "docs/test-strategy.md",
     "scripts/verify_repository.py",
+    "scripts/zed_cli_crash_recovery.py",
     ".github/workflows/deep-tests.yml",
+    ".github/docker/zed-cli-crash.Dockerfile",
     "src/deep_tests/__init__.py",
+    "src/deep_tests/process_checkpoint.py",
+    "tests/test_process_checkpoint.py",
 }
 missing = sorted(path for path in required if not (ROOT / path).exists())
 if missing:
@@ -50,6 +54,42 @@ action_pattern = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}$")
 actions = [line.split("uses:", 1)[1].strip() for line in workflow.splitlines() if "uses:" in line]
 if len(actions) < 2 or any(not action_pattern.fullmatch(action) for action in actions):
     raise SystemExit(f"workflow actions are not immutably pinned: {actions}")
+
+adapter = metadata.get("product_adapter", {})
+if adapter.get("linear_issue") != "DEN-2046":
+    raise SystemExit("product adapter is not bound to DEN-2046")
+zed_cli_commit = str(adapter.get("zed_cli_commit", ""))
+if not re.fullmatch(r"[0-9a-f]{40}", zed_cli_commit) or zed_cli_commit not in workflow:
+    raise SystemExit("zed-cli product adapter is not pinned to one exact commit")
+if adapter.get("execution_boundaries") != ["host", "oci"]:
+    raise SystemExit("zed-cli product adapter must cover host and OCI execution")
+
+dockerfile = (ROOT / ".github/docker/zed-cli-crash.Dockerfile").read_text(encoding="utf-8")
+base_digest = str(adapter.get("oci_base_digest", ""))
+if not re.fullmatch(r"sha256:[0-9a-f]{64}", base_digest) or base_digest not in dockerfile:
+    raise SystemExit("OCI product adapter base is not immutably pinned")
+
+checkpoint_driver = (ROOT / "src/deep_tests/process_checkpoint.py").read_text(encoding="utf-8")
+product_adapter = (ROOT / "scripts/zed_cli_crash_recovery.py").read_text(encoding="utf-8")
+for unsafe_wait in ("time.sleep(", "sleep("):
+    if unsafe_wait in checkpoint_driver or unsafe_wait in product_adapter:
+        raise SystemExit(f"product adapter contains a nondeterministic wait: {unsafe_wait}")
+for checkpoint in (
+    "uninstall 1 package(s)",
+    "unmaterialize lock-test/member",
+    "record 0 remaining installed package(s) and commit transaction",
+):
+    if checkpoint not in product_adapter:
+        raise SystemExit(f"missing semantic process checkpoint: {checkpoint}")
+for contract in (
+    "ZED_PKG_INTERACTIVE",
+    "uuid.uuid4()",
+    "CheckpointAction.EOF",
+    "CheckpointAction.KILL",
+    "install\", \"--frozen",
+):
+    if contract not in product_adapter and contract not in workflow:
+        raise SystemExit(f"missing interactive recovery contract: {contract}")
 
 if metadata.get("bootstrap_operation") != "deep-test-fleet-20260808":
     raise SystemExit("bootstrap operation identity drift")

@@ -1,7 +1,7 @@
 {
   "bootstrap_date": "2026-08-08",
   "bootstrap_operation": "deep-test-fleet-20260808",
-  "description": "Deterministic fault-injection, crash recovery, retry, partition, duplicate-delivery, and convergence tests.",
+  "description": "Deterministic fault-injection plus black-box interactive crash recovery on host and OCI runtimes.",
   "organization": "zed-pkg-test",
   "primary_organization": "zed-pkg",
   "repository": "chaos-recovery-tests",
@@ -11,11 +11,23 @@
     "AGENTS.md",
     "docs/test-strategy.md",
     "scripts/verify_repository.py",
+    "scripts/zed_cli_crash_recovery.py",
     "src/deep_tests/__init__.py",
+    "src/deep_tests/process_checkpoint.py",
     "tests"
   ],
-  "schema_version": 1,
+  "schema_version": 2,
   "suite": "chaos",
+  "product_adapter": {
+    "execution_boundaries": [
+      "host",
+      "oci"
+    ],
+    "linear_issue": "DEN-2046",
+    "oci_base_digest": "sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517",
+    "primary_repository": "zed-pkg/zed-cli",
+    "zed_cli_commit": "c122d3b53f4d0a0021e60928e000132d33ea2c72"
+  },
   "tracking_issue": "https://github.com/ORESoftware/ai-agent-coordinator.rs/issues/139",
   "visibility": "public"
 }
