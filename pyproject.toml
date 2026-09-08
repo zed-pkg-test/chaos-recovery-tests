@@ -1,7 +1,7 @@
 [project]
 name = "zed-pkg-test-chaos-recovery-tests"
-version = "0.2.0"
-description = "Deterministic fault injection and black-box interactive crash recovery for host and OCI runtimes."
+version = "0.3.0"
+description = "Black-box interactive package lifecycle and crash recovery for host and OCI runtimes."
 requires-python = ">=3.11"
 dependencies = []
 
