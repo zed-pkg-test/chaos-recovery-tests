@@ -142,19 +142,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          extra=()
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            extra=(
-              --exercise-r2g-container
+            python3 contract/scripts/zed_cli_full_lifecycle.py \
+              --zed "$GITHUB_WORKSPACE/zed-cli/target/release/zed" \
+              --mode host \
+              --cli-commit "$ZED_CLI_COMMIT" \
+              --evidence "$RUNNER_TEMP/evidence/full-host.json" \
+              --exercise-r2g-container \
               --r2g-container-image "ubuntu:24.04@$OCI_BASE_DIGEST"
-            )
+          else
+            python3 contract/scripts/zed_cli_full_lifecycle.py \
+              --zed "$GITHUB_WORKSPACE/zed-cli/target/release/zed" \
+              --mode host \
+              --cli-commit "$ZED_CLI_COMMIT" \
+              --evidence "$RUNNER_TEMP/evidence/full-host.json"
           fi
-          python3 contract/scripts/zed_cli_full_lifecycle.py \
-            --zed "$GITHUB_WORKSPACE/zed-cli/target/release/zed" \
-            --mode host \
-            --cli-commit "$ZED_CLI_COMMIT" \
-            --evidence "$RUNNER_TEMP/evidence/full-host.json" \
-            "${extra[@]}"
 
       - name: Build exact CLI into pinned OCI runtime
         if: runner.os == 'Linux'
