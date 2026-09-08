@@ -16,11 +16,13 @@ required = {
     "docs/test-strategy.md",
     "scripts/verify_repository.py",
     "scripts/zed_cli_crash_recovery.py",
+    "scripts/zed_cli_full_lifecycle.py",
     ".github/workflows/deep-tests.yml",
     ".github/docker/zed-cli-crash.Dockerfile",
     "src/deep_tests/__init__.py",
     "src/deep_tests/process_checkpoint.py",
     "tests/test_process_checkpoint.py",
+    "tests/test_full_lifecycle.py",
 }
 missing = sorted(path for path in required if not (ROOT / path).exists())
 if missing:
@@ -58,6 +60,8 @@ if len(actions) < 2 or any(not action_pattern.fullmatch(action) for action in ac
 adapter = metadata.get("product_adapter", {})
 if adapter.get("linear_issue") != "DEN-2046":
     raise SystemExit("product adapter is not bound to DEN-2046")
+if adapter.get("linear_issues") != ["DEN-2046", "DEN-3908"]:
+    raise SystemExit("product adapter is not bound to the crash and lifecycle Linear issues")
 zed_cli_commit = str(adapter.get("zed_cli_commit", ""))
 if not re.fullmatch(r"[0-9a-f]{40}", zed_cli_commit) or zed_cli_commit not in workflow:
     raise SystemExit("zed-cli product adapter is not pinned to one exact commit")
@@ -71,8 +75,9 @@ if not re.fullmatch(r"sha256:[0-9a-f]{64}", base_digest) or base_digest not in d
 
 checkpoint_driver = (ROOT / "src/deep_tests/process_checkpoint.py").read_text(encoding="utf-8")
 product_adapter = (ROOT / "scripts/zed_cli_crash_recovery.py").read_text(encoding="utf-8")
+lifecycle_adapter = (ROOT / "scripts/zed_cli_full_lifecycle.py").read_text(encoding="utf-8")
 for unsafe_wait in ("time.sleep(", "sleep("):
-    if unsafe_wait in checkpoint_driver or unsafe_wait in product_adapter:
+    if unsafe_wait in checkpoint_driver or unsafe_wait in product_adapter or unsafe_wait in lifecycle_adapter:
         raise SystemExit(f"product adapter contains a nondeterministic wait: {unsafe_wait}")
 for checkpoint in (
     "uninstall 1 package(s)",
@@ -90,6 +95,27 @@ for contract in (
 ):
     if contract not in product_adapter and contract not in workflow:
         raise SystemExit(f"missing interactive recovery contract: {contract}")
+for contract in (
+    '"release", "plan", "--json"',
+    '"r2g", "--r2g-root"',
+    '"publish", "--skip-vcs-checks"',
+    '"publish", "--interactive"',
+    '"install",',
+    '["uninstall"]',
+    '"--frozen"',
+    'uuid.uuid4()',
+    'zed-cli-interactive-full-lifecycle/v1',
+):
+    if contract not in lifecycle_adapter:
+        raise SystemExit(f"missing full lifecycle contract: {contract}")
+for expected_pin in (
+    "e5f114d2c905b37b3d11628b9ded841254b768e2",
+    "3c54298fc7a8c1b2f9c1d74f588c6118b38f197e",
+    "1db0da00d30fcf2e0762f50eedb1f88458020b52",
+    "2946224fb3a1bd84c0e39146b24f5f1ca8d69862",
+):
+    if expected_pin not in workflow:
+        raise SystemExit(f"workflow is missing exact source pin: {expected_pin}")
 
 if metadata.get("bootstrap_operation") != "deep-test-fleet-20260808":
     raise SystemExit("bootstrap operation identity drift")

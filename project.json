@@ -1,7 +1,7 @@
 {
   "bootstrap_date": "2026-08-08",
   "bootstrap_operation": "deep-test-fleet-20260808",
-  "description": "Deterministic fault-injection plus black-box interactive crash recovery on host and OCI runtimes.",
+  "description": "Black-box publish, r2g, install, interactive uninstall, frozen restore, and crash recovery on host and OCI runtimes.",
   "organization": "zed-pkg-test",
   "primary_organization": "zed-pkg",
   "repository": "chaos-recovery-tests",
@@ -12,6 +12,7 @@
     "docs/test-strategy.md",
     "scripts/verify_repository.py",
     "scripts/zed_cli_crash_recovery.py",
+    "scripts/zed_cli_full_lifecycle.py",
     "src/deep_tests/__init__.py",
     "src/deep_tests/process_checkpoint.py",
     "tests"
@@ -24,10 +25,19 @@
       "oci"
     ],
     "linear_issue": "DEN-2046",
+    "linear_issues": [
+      "DEN-2046",
+      "DEN-3908"
+    ],
     "oci_base_digest": "sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517",
     "primary_repository": "zed-pkg/zed-cli",
-    "zed_cli_commit": "c122d3b53f4d0a0021e60928e000132d33ea2c72"
+    "zed_cli_commit": "e5f114d2c905b37b3d11628b9ded841254b768e2",
+    "zed_interfaces_commit": "3c54298fc7a8c1b2f9c1d74f588c6118b38f197e"
   },
-  "tracking_issue": "https://github.com/ORESoftware/ai-agent-coordinator.rs/issues/139",
+  "tracking_issue": "https://github.com/ORESoftware/ai-agent-coordinator.rs/issues/199",
+  "tracking_issues": [
+    "https://github.com/ORESoftware/ai-agent-coordinator.rs/issues/139",
+    "https://github.com/ORESoftware/ai-agent-coordinator.rs/issues/199"
+  ],
   "visibility": "public"
 }
