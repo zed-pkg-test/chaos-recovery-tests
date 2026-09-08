@@ -128,6 +128,7 @@ class Runtime:
         interactive: bool,
         stdin_open: bool = False,
         cidfile: Path | None = None,
+        cwd: Path | None = None,
     ) -> list[str]:
         if self.mode == "host":
             return [str(self.zed), *arguments]
@@ -140,6 +141,14 @@ class Runtime:
             command.append("--interactive")
         if cidfile is not None:
             command.extend(["--cidfile", str(cidfile)])
+        host_workdir = (cwd or self.project).resolve()
+        try:
+            relative_workdir = host_workdir.relative_to(self.project.resolve())
+        except ValueError as error:
+            raise AssertionError(
+                f"OCI working directory is outside the mounted project: {host_workdir}"
+            ) from error
+        container_workdir = Path("/work") / relative_workdir
         command.extend(
             [
                 "--network",
@@ -158,7 +167,7 @@ class Runtime:
                 "--mount",
                 f"type=bind,src={self.home},dst=/zed-home",
                 "--workdir",
-                "/work",
+                container_workdir.as_posix(),
                 "--env",
                 "HOME=/zed-home",
                 "--env",
@@ -181,6 +190,7 @@ class Runtime:
         self,
         arguments: list[str],
         *,
+        cwd: Path | None = None,
         input_text: str | None = None,
         check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
@@ -189,8 +199,9 @@ class Runtime:
                 arguments,
                 interactive=False,
                 stdin_open=input_text is not None,
+                cwd=cwd,
             ),
-            cwd=self.project,
+            cwd=cwd or self.project,
             env=self.environment(),
             input=input_text,
             stdout=subprocess.PIPE,
@@ -210,6 +221,9 @@ class Runtime:
         self,
         checkpoint: str,
         action: CheckpointAction,
+        *,
+        arguments: list[str] | None = None,
+        cwd: Path | None = None,
     ) -> CheckpointResult:
         cidfile = None
         before_action = None
@@ -239,13 +253,14 @@ class Runtime:
 
         return run_at_checkpoint(
             self.command(
-                ["--interactive", "uninstall"],
+                arguments or ["uninstall", "--interactive"],
                 interactive=True,
                 cidfile=cidfile,
+                cwd=cwd,
             ),
             checkpoint,
             action,
-            cwd=self.project,
+            cwd=cwd or self.project,
             env=self.environment(),
             timeout=self.timeout,
             before_action=before_action,
@@ -327,7 +342,7 @@ def main() -> int:
         }
 
         redirected = runtime.run(
-            ["--interactive", "uninstall"],
+            ["uninstall", "--interactive"],
             input_text="yes\n",
             check=False,
         )
