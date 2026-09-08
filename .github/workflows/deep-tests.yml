@@ -18,8 +18,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: '1'
-  ZED_CLI_COMMIT: c122d3b53f4d0a0021e60928e000132d33ea2c72
-  ZED_INTERFACES_COMMIT: 0c51d732cb01a377b2bc00e8d945b355e41961c1
+  ZED_CLI_COMMIT: e5f114d2c905b37b3d11628b9ded841254b768e2
+  ZED_INTERFACES_COMMIT: 3c54298fc7a8c1b2f9c1d74f588c6118b38f197e
   ZED_LOCK_COMMIT: 1db0da00d30fcf2e0762f50eedb1f88458020b52
   FLAGS2ENV_COMMIT: 2946224fb3a1bd84c0e39146b24f5f1ca8d69862
   OCI_BASE_DIGEST: sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517
@@ -47,7 +47,7 @@ jobs:
         run: python -m unittest discover -s tests -v
 
   zed-cli-crash-recovery:
-    name: ${{ matrix.os }} interactive crash recovery
+    name: ${{ matrix.os }} interactive lifecycle and crash recovery
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -119,9 +119,10 @@ jobs:
 
       - name: Run transaction recovery unit contract
         shell: bash
-        run: >-
-          cargo test --locked --manifest-path zed-cli/Cargo.toml
-          --lib transaction::tests -- --nocapture
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path zed-cli/Cargo.toml --lib transaction::tests -- --nocapture
+          cargo test --locked --manifest-path zed-cli/Cargo.toml --lib r2g::tests -- --nocapture
 
       - name: Build exact release executable
         shell: bash
@@ -137,12 +138,30 @@ jobs:
             --cli-commit "$ZED_CLI_COMMIT" \
             --evidence "$RUNNER_TEMP/evidence/host.json"
 
+      - name: Certify publish, r2g, install, interactive uninstall, and frozen restore on the host
+        shell: bash
+        run: |
+          set -euo pipefail
+          extra=()
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            extra=(
+              --exercise-r2g-container
+              --r2g-container-image "ubuntu:24.04@$OCI_BASE_DIGEST"
+            )
+          fi
+          python3 contract/scripts/zed_cli_full_lifecycle.py \
+            --zed "$GITHUB_WORKSPACE/zed-cli/target/release/zed" \
+            --mode host \
+            --cli-commit "$ZED_CLI_COMMIT" \
+            --evidence "$RUNNER_TEMP/evidence/full-host.json" \
+            "${extra[@]}"
+
       - name: Build exact CLI into pinned OCI runtime
         if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
-          context="$RUNNER_TEMP/zed-cli-oci-context"
+          context="$RUNNER_TEMP/zed-cli-oci-context-$(python3 -c 'import uuid; print(uuid.uuid4())')"
           mkdir -p "$context"
           install -m 0755 zed-cli/target/release/zed "$context/zed"
           cp contract/.github/docker/zed-cli-crash.Dockerfile "$context/Dockerfile"
@@ -163,6 +182,19 @@ jobs:
             --oci-base-digest "$OCI_BASE_DIGEST" \
             --cli-commit "$ZED_CLI_COMMIT" \
             --evidence "$RUNNER_TEMP/evidence/oci.json"
+
+      - name: Certify the full interactive lifecycle in fresh OCI containers
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 contract/scripts/zed_cli_full_lifecycle.py \
+            --zed "$GITHUB_WORKSPACE/zed-cli/target/release/zed" \
+            --mode oci \
+            --oci-image "zed-cli-crash:$ZED_CLI_COMMIT" \
+            --oci-base-digest "$OCI_BASE_DIGEST" \
+            --cli-commit "$ZED_CLI_COMMIT" \
+            --evidence "$RUNNER_TEMP/evidence/full-oci.json"
 
       - name: Upload machine-readable recovery evidence
         if: always()
