@@ -1,0 +1,94 @@
+name: counterpart-tip infra recovery system
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: counterpart-tip-infra-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  current-production-infra:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ secrets.TEST_FLEET_GITHUB_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
+        with:
+          terraform_version: 1.16.2
+          terraform_wrapper: false
+
+      - name: Test 1 - clone the current production infra tip exactly
+        shell: bash
+        run: |
+          set -euo pipefail
+          primary="${GITHUB_REPOSITORY_OWNER%-test}"
+          gh api --paginate "orgs/${primary}/repos?per_page=100&type=all" \
+            --jq '.[] | select(.archived == false) | [.name, .default_branch] | @tsv' > /tmp/primary-repos.tsv
+          infra="$(awk -F '\t' '$1 ~ /(^infra$|-infra$|\.infra$)/ {print; exit}' /tmp/primary-repos.tsv)"
+          test -n "$infra" || {
+            echo "No production *-infra/.infra repository is visible in ${primary}; configure TEST_FLEET_GITHUB_TOKEN if it is private." >&2
+            exit 1
+          }
+          repo="${infra%%$'\t'*}"
+          branch="${infra#*$'\t'}"
+          expected="$(gh api "repos/${primary}/${repo}/commits/${branch}" --jq .sha)"
+          gh repo clone "${primary}/${repo}" .deps/infra -- --depth=1 --branch "$branch"
+          actual="$(git -C .deps/infra rev-parse HEAD)"
+          test "$actual" = "$expected"
+          printf '%s\n' "$repo" > /tmp/infra-repo
+          printf '%s\n' "$expected" > /tmp/infra-sha
+
+      - name: Test 2 - modules-first environment and state boundaries are coherent
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=.deps/infra
+          if [[ -f "$root/.ores-infra.toml" ]]; then
+            grep -Eq '^layout[[:space:]]*=[[:space:]]*"modules"' "$root/.ores-infra.toml"
+            grep -Eq '^modules_root[[:space:]]*=[[:space:]]*"modules"' "$root/.ores-infra.toml"
+            grep -Eq '^environments_root[[:space:]]*=[[:space:]]*"environments"' "$root/.ores-infra.toml"
+            for env in preview staging production; do
+              test -d "$root/environments/$env" || {
+                echo "modules-first infra is missing environments/$env" >&2
+                exit 1
+              }
+            done
+          fi
+          if [[ -f "$root/environments/backend.r2.hcl.example" ]]; then
+            grep -Eq 'use_lockfile[[:space:]]*=[[:space:]]*true' "$root/environments/backend.r2.hcl.example"
+          fi
+
+      - name: Test 3 - Terraform current-tip environments initialize and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=.deps/infra
+          validated=0
+          for env in preview staging production; do
+            dir="$root/environments/$env"
+            if compgen -G "$dir/*.tf" >/dev/null; then
+              terraform -chdir="$dir" fmt -check -recursive
+              terraform -chdir="$dir" init -backend=false -input=false
+              terraform -chdir="$dir" validate -no-color
+              validated=$((validated + 1))
+            fi
+          done
+          if [[ "$validated" -eq 0 ]]; then
+            if compgen -G "$root/**/*.tf" >/dev/null 2>&1 || find "$root" -name '*.tf' -print -quit | grep -q .; then
+              terraform fmt -check -recursive "$root"
+            else
+              echo "Infra tip has no Terraform environment roots yet; checkout/layout recovery assertions still ran."
+            fi
+          fi
