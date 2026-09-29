@@ -1,0 +1,75 @@
+name: drua-read-your-write-fence-proof
+
+on:
+  push:
+    branches:
+      - test/drua-read-your-write-fence-20260928
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove-drua-read-your-write-fence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout proof carrier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Checkout exact Drua hardening commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/drua-fork
+          ref: 96738094135c93b1a153c9574df5c93a9309eeb0
+          path: drua
+          persist-credentials: false
+
+      - name: Verify exact Drua source identity
+        working-directory: drua
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          expected="96738094135c93b1a153c9574df5c93a9309eeb0"
+          echo "Drua hardening proof commit: $actual"
+          test "$actual" = "$expected"
+
+      - name: Install Drua Nix environment
+        uses: ./drua/.github/actions/setup-nix
+
+      - name: Run fence graph unit tests
+        working-directory: drua
+        run: |
+          set -euo pipefail
+          nix develop --command cargo test -p drua-library --lib head_fence::tests -- --nocapture
+
+      - name: Run Drua flake checks
+        working-directory: drua
+        run: nix flake check --print-build-logs
+
+      - name: Enable only the ignored immediate peer-read regression
+        working-directory: drua
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("core/crates/library/tests/cross_replica_read_your_write.rs")
+          text = path.read_text()
+          marker = '#[ignore = "requires postgres + writes to tests/.library; run with --ignored"]\nasync fn acknowledged_space_write_is_immediately_visible_on_peer()'
+          replacement = 'async fn acknowledged_space_write_is_immediately_visible_on_peer()'
+          if marker not in text:
+              raise SystemExit("target regression ignore marker not found")
+          path.write_text(text.replace(marker, replacement, 1))
+          PY
+          git diff --check
+          git diff -- core/crates/library/tests/cross_replica_read_your_write.rs
+
+      - name: Run Drua integration suite with immediate cross-replica read
+        working-directory: drua
+        env:
+          COMPOSE_CMD: docker compose
+        run: nix run .#integration-tests
