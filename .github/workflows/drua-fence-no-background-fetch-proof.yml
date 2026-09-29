@@ -1,0 +1,78 @@
+name: drua-fence-no-background-fetch-proof
+
+on:
+  push:
+    branches:
+      - test/drua-fence-no-background-fetch-20260928
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove-drua-fence-without-background-fetch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout proof carrier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Checkout exact Drua stacked proof commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/drua-fork
+          ref: 5938cec71fac255bc9a9a360f2bf2d08f8e454d4
+          path: drua
+          persist-credentials: false
+
+      - name: Verify exact Drua source identity
+        working-directory: drua
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          expected="5938cec71fac255bc9a9a360f2bf2d08f8e454d4"
+          echo "Drua deterministic-fence proof commit: $actual"
+          test "$actual" = "$expected"
+
+      - name: Install Drua Nix environment
+        uses: ./drua/.github/actions/setup-nix
+
+      - name: Run Drua flake checks
+        working-directory: drua
+        run: nix flake check --print-build-logs
+
+      - name: Enable fence regressions only in this CI workspace
+        working-directory: drua
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path("core/crates/library/tests/cross_replica_read_your_write.rs"): (
+                  '#[ignore = "requires postgres + writes to tests/.library; run with --ignored"]\nasync fn acknowledged_space_write_is_immediately_visible_on_peer()',
+                  'async fn acknowledged_space_write_is_immediately_visible_on_peer()',
+              ),
+              Path("core/crates/library/src/space/head_fence_test.rs"): (
+                  '#[ignore = "requires migrated postgres; run in the integration-test environment"]\nasync fn before_read_refreshes_a_provably_stale_replica_without_background_fetcher()',
+                  'async fn before_read_refreshes_a_provably_stale_replica_without_background_fetcher()',
+              ),
+          }
+
+          for path, (marker, replacement) in replacements.items():
+              text = path.read_text()
+              if marker not in text:
+                  raise SystemExit(f"target ignore marker not found in {path}")
+              path.write_text(text.replace(marker, replacement, 1))
+          PY
+          git diff --check
+          git diff -- core/crates/library/tests/cross_replica_read_your_write.rs core/crates/library/src/space/head_fence_test.rs
+
+      - name: Run Drua integration suite with both fence proofs
+        working-directory: drua
+        env:
+          COMPOSE_CMD: docker compose
+        run: nix run .#integration-tests
