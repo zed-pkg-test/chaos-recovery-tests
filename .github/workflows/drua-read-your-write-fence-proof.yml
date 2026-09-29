@@ -1,6 +1,9 @@
 name: drua-read-your-write-fence-proof
 
 on:
+  push:
+    branches:
+      - test/drua-read-your-write-fence-20260928
   pull_request:
   workflow_dispatch:
 
